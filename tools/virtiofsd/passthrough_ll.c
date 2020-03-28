@@ -1705,7 +1705,7 @@ static void update_open_flags(int writeback, struct fuse_file_info *fi)
      * cache on host as well. If somebody needs that behavior, it
      * probably should be a configuration knob in daemon.
      */
-    fi->flags &= ~O_DIRECT;
+    //fi->flags &= ~O_DIRECT;
 }
 
 static void lo_create(fuse_req_t req, fuse_ino_t parent, const char *name,

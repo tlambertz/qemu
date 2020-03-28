@@ -534,6 +534,44 @@ static void fv_queue_worker(gpointer data, gpointer user_data)
             pbufv->buf[pbufvindex].mem = out_sg[iovindex].iov_base;
             pbufv->buf[pbufvindex].size = out_sg[iovindex].iov_len;
         }
+    } else if (out_num > 1 &&
+        out_sg[0].iov_len == sizeof(struct fuse_in_header) + sizeof(struct fuse_write_in) &&
+        ((struct fuse_in_header *)fbuf.mem)->opcode == FUSE_WRITE) {
+            // In contrast to the case above, we send [(in_header, write_in), (write_data)] instead of [(in_header), (write_in), (write_data)]
+        /*
+         * For a write we don't actually need to copy the
+         * data, we can just do it straight out of guest memory
+         * but we must still copy the headers in case the guest
+         * was nasty and changed them while we were using them.
+         */
+        fuse_log(FUSE_LOG_DEBUG, "%s: Write special case #2, joined headers\n", __func__);
+        fbuf.size = out_sg[0].iov_len;
+
+        /* Allocate the bufv, with space for the rest of the iov */
+        pbufv = malloc(sizeof(struct fuse_bufvec) +
+                       sizeof(struct fuse_buf) * (out_num - 1));
+        if (!pbufv) {
+            fuse_log(FUSE_LOG_ERR, "%s: pbufv malloc failed\n",
+                    __func__);
+            goto out;
+        }
+
+        allocated_bufv = true;
+        pbufv->count = 1;
+        pbufv->buf[0] = fbuf;
+
+        size_t iovindex, pbufvindex;
+        iovindex = 1; /* 2 headers, singular iov */
+        pbufvindex = 1; /* 2 headers, 1 fusebuf */
+
+        for (; iovindex < out_num; iovindex++, pbufvindex++) {
+            pbufv->count++;
+            pbufv->buf[pbufvindex].pos = ~0; /* Dummy */
+            pbufv->buf[pbufvindex].flags = 0;
+            pbufv->buf[pbufvindex].mem = out_sg[iovindex].iov_base;
+            pbufv->buf[pbufvindex].size = out_sg[iovindex].iov_len;
+        }
+        fuse_log(FUSE_LOG_DEBUG, "%s: new pubv->cnt: %d\n", __func__, pbufv->count);
     } else {
         /* Normal (non fast write) path */
 
